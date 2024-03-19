@@ -1,0 +1,9 @@
+{
+    "rust-analyzer.linkedProjects": [
+
+        "./bls381/Cargo.toml",
+        "./f128/Cargo.toml",
+        "./stark252/Cargo.toml",
+        "./cheetah64/Cargo.toml",
+    ]
+}

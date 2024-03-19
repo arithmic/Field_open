@@ -1,0 +1,16 @@
+[package]
+name = "stark252"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+traits = { version = "0.1.0", path = "../traits" }
+core = { version = "0.1.0", path = "../utils/core", package = "utils" }
+crypto_bigint = { git = "ssh://git@github.com/arithmic/crypto_bigint.git", branch = "main", features = [
+    "generic-array",
+    "zeroize",
+] }
+rand = "0.8.5"
+hash = { version = "0.1.0", path = "../hash" }
+
+

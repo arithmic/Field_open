@@ -1,0 +1,17 @@
+[package]
+name = "cheetah64"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+traits = { version = "0.1.0", path = "../traits" }
+crypto_bigint = { git = "ssh://git@github.com/arithmic/crypto_bigint.git", branch = "main", features = [
+    "generic-array",
+    "zeroize",
+] }
+utilities = { version = "0.1.0", path = "../utilities" }
+core = { version = "0.1.0", path = "../utils/core", package = "utils" }
+rand-utils = { version = "0.1.0", path = "../utils/rand" }
+rand = "0.8.5"
+subtle = { version = "2.4", default-features = false }
+bitvec = "1"

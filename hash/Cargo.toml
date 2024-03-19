@@ -1,0 +1,12 @@
+[package]
+name = "hash"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+traits = { version = "0.1.0", path = "../traits" }
+crypto_bigint = { git = "ssh://git@github.com/arithmic/crypto_bigint.git", branch = "main", features = [
+    "generic-array",
+    "zeroize",
+] }
+rayon = "1.8.0"
