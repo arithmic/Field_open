@@ -1,4 +1,14 @@
-use crypto_bigint::{Random, Encoding};
+use core::{
+    AsBytes, ByteReader, ByteWriter, Deserializable, DeserializationError, Randomizable,
+    Serializable,
+};
+use crypto_bigint::{
+    generic_array::GenericArray,
+    subtle::{Choice, ConditionallySelectable, ConstantTimeEq, ConstantTimeLess, CtOption},
+    ArrayEncoding, Integer, Limb, Zero, U256,
+};
+use crypto_bigint::{Encoding, Random};
+use rand::rngs::OsRng;
 use std::{
     fmt::Display,
     mem,
@@ -6,20 +16,11 @@ use std::{
     slice,
 };
 use traits::traits::{Field, PrimeField};
-use core::{
-    AsBytes, ByteReader, ByteWriter, Deserializable, DeserializationError, Randomizable,
-    Serializable,
+
+use crate::{
+    fp::Reduce,
+    scalar::{adc, mac, sbb},
 };
-use crypto_bigint::{
-    generic_array::GenericArray,
-    subtle::{Choice, ConditionallySelectable, ConstantTimeEq, ConstantTimeLess, CtOption}, 
-    ArrayEncoding, Integer, Limb, Zero, U256,
-};
-use rand::rngs::OsRng;
-
-use crate::{fp::Reduce, scalar::{mac, sbb, adc}};
-
-
 
 // Size of field elements of this elliptic curve.
 pub type FieldSize = <U256 as crypto_bigint::ArrayEncoding>::ByteSize;
@@ -33,11 +34,12 @@ const ELEMENT_BYTES: usize = std::mem::size_of::<U256>();
 pub const GENERATOR: u32 = 7;
 // n=13108968793781547619861935127046491459309155893440570251786403306729687672801
 pub const BANDSCALAR_MODULUS: U256 =
-U256::from_be_hex("1CFB69D4CA675F520CCE760202687600FF8F87007419047174FD06B52876E7E1");
+    U256::from_be_hex("1CFB69D4CA675F520CCE760202687600FF8F87007419047174FD06B52876E7E1");
 
 // BANDSCALAR_MODULUS/2
 const FRAC_BANDSCALAR_MODULUS_2: BandScalar = BandScalar(BANDSCALAR_MODULUS.shr_vartime(1));
-pub const TWO_ADIC_ROOT: U256 = U256::from_be_hex("19470B7EFE802F9B36B6675F52C7008234BB3E0CB7ED22AEC65A62A1234BD960");
+pub const TWO_ADIC_ROOT: U256 =
+    U256::from_be_hex("19470B7EFE802F9B36B6675F52C7008234BB3E0CB7ED22AEC65A62A1234BD960");
 
 #[allow(unused)]
 // MU = floor(2^512 / n)
@@ -58,9 +60,9 @@ impl BandScalar {
     //implement zero and one
     pub const ZERO: Self = Self(U256::ZERO);
     pub const ONE: Self = Self(U256::ONE);
-    pub const BANDSCALAR_MODULUS_1: Self = Self(
-        U256::from_be_hex("1CFB69D4CA675F520CCE760202687600FF8F87007419047174FD06B52876E7E0")
-    );
+    pub const BANDSCALAR_MODULUS_1: Self = Self(U256::from_be_hex(
+        "1CFB69D4CA675F520CCE760202687600FF8F87007419047174FD06B52876E7E0",
+    ));
 
     //return the new instance of the struct it takes any element as input
     //convert on U256 bit and check if the value is greater or less than modulus
@@ -175,42 +177,46 @@ impl Field for BandScalar {
     // depends on exp, square, new takes an input in the field.
     //
 
-    
     //it generates the random values of U256 bits using the random OsRng function of the crypto
     //bigint. The r value stores the random value. It can be greater then the modulus. We
     // convert it into BandScalar element using the mul_wide function from crypto_bigint. Then
     // do barret reduce to reduce the value from modulus and bring it in the BandScalar as BandScalar element.
-    fn random()->Self {
-        let r=U256::random(&mut OsRng);
-        if r<BANDSCALAR_MODULUS{
-            return BandScalar(r)
-        }
-        else{
-            return BandScalar(r>>4)
+    fn random() -> Self {
+        let r = U256::random(&mut OsRng);
+        if r < BANDSCALAR_MODULUS {
+            return BandScalar(r);
+        } else {
+            return BandScalar(r >> 4);
         }
     }
 
     fn sqrt(self) -> CtOption<Self> {
         //self^((t-1)/2)
-        let mut w = self.power_by(U256::from_be_hex("0073eda753299d7d483339d80809a1d803fe3e1c01d06411c5d3f41ad4a1db9f").to_words());
+        let mut w = self.power_by(
+            U256::from_be_hex("0073eda753299d7d483339d80809a1d803fe3e1c01d06411c5d3f41ad4a1db9f")
+                .to_words(),
+        );
         // v is the number of leading zeros bit in the bit representation of q-1
         let mut v = 5 as u32; //v
         let mut x = self * w; //x
         let mut b = x * w; //b
         let multiplicative_generator = BandScalar(U256::from_u32(GENERATOR));
         //g^((q-1)/2^5)
-        let mut z = multiplicative_generator.power_by(U256::from_be_hex("00e7db4ea6533afa906673b0101343b007fc7c3803a0c8238ba7e835a943b73f").to_words()); // z
-        
-        while !b.is_one()
-        {let mut k = 0;
+        let mut z = multiplicative_generator.power_by(
+            U256::from_be_hex("00e7db4ea6533afa906673b0101343b007fc7c3803a0c8238ba7e835a943b73f")
+                .to_words(),
+        ); // z
+
+        while !b.is_one() {
+            let mut k = 0;
             let mut b2k = b;
-            while !b2k.is_one(){
+            while !b2k.is_one() {
                 b2k = b2k.square();
-                k+=1;
+                k += 1;
             }
-            let j = v-k;
-            w =z;
-            for _ in 1..j{
+            let j = v - k;
+            w = z;
+            for _ in 1..j {
                 w = w.square();
             }
 
@@ -218,10 +224,10 @@ impl Field for BandScalar {
             b *= z;
             x *= w;
             v = k;
-        }     
+        }
         CtOption::new(x, square(x).ct_eq(&self))
     }
-    
+
     fn to_curve_bytes(&self) -> &[u8] {
         self.as_bytes()
     }
@@ -229,50 +235,47 @@ impl Field for BandScalar {
         self.0.to_words().into()
     }
 
-    fn from_words( a: &Vec<u64>) -> Self {
-        let k = [a[0],a[1],a[2],a[3]];
+    fn from_words(a: &Vec<u64>) -> Self {
+        let k = [a[0], a[1], a[2], a[3]];
         let value = U256::from_words(k);
         BandScalar(value)
     }
 
-    fn  from_uint_reduced(w: BandScalar) -> Self {
+    fn from_uint_reduced(w: BandScalar) -> Self {
         let (r, underflow) = w.0.sbb(&BANDSCALAR_MODULUS, Limb::ZERO);
         let underflow = Choice::from((underflow.0 >> (Limb::BITS - 1)) as u8);
         Self(U256::conditional_select(&w.0, &r, !underflow))
     }
 
-    
-    fn get_windows(&self, window_bits : usize)->Vec<usize> {
-
+    fn get_windows(&self, window_bits: usize) -> Vec<usize> {
         let int = &self.0;
 
-        let window_marker = 1usize<<window_bits;
+        let window_marker = 1usize << window_bits;
 
-        let n_windows = (256/window_bits) + 1;
+        let n_windows = (256 / window_bits) + 1;
 
-        let mut windows = vec![0usize;n_windows];
+        let mut windows = vec![0usize; n_windows];
 
-        for i in 0..(n_windows){
-            windows[i] = ((int>>(i*window_bits)).to_words()[0] as usize)%(window_marker);
+        for i in 0..(n_windows) {
+            windows[i] = ((int >> (i * window_bits)).to_words()[0] as usize) % (window_marker);
         }
         windows
-    
     }
 
     const IS_CANONICAL: bool = true;
-
 }
 /// ========= prime field implementation =========
 //impl base field on BandScalar
 impl PrimeField for BandScalar {
-    
     type Repr = FieldBytes;
-    const TWO_ADIC_ROOT: & 'static str = "19470B7EFE802F9B36B6675F52C7008234BB3E0CB7ED22AEC65A62A1234BD960";
+    const TWO_ADIC_ROOT: &'static str =
+        "19470B7EFE802F9B36B6675F52C7008234BB3E0CB7ED22AEC65A62A1234BD960";
     const GENERATOR: Self = BandScalar(U256::from_u32(7));
-    const NUM_BITS: u32 = (ELEMENT_BYTES*8)as u32; // every byte is 8 bits
-    const MODULUS: &'static str = "1CFB69D4CA675F520CCE760202687600FF8F87007419047174FD06B52876E7E1";
+    const NUM_BITS: u32 = (ELEMENT_BYTES * 8) as u32; // every byte is 8 bits
+    const MODULUS: &'static str =
+        "1CFB69D4CA675F520CCE760202687600FF8F87007419047174FD06B52876E7E1";
     const TWO_ADDICITY: u32 = 5;
-     // the function takes a self argument and check if the input is odd or not
+    // the function takes a self argument and check if the input is odd or not
     // it uses the is_odd of the crypto bigint to analyse the value.
     //return a bool value - true or false
     fn is_odd(self) -> Choice {
@@ -282,21 +285,15 @@ impl PrimeField for BandScalar {
     // not possible for BandScalar.
     // the root_of_unity does not exist for BandScalar field
     fn get_root_of_unity(k: u32) -> Self {
-       //if n == 0 ; 2^0 root does not exist
+        //if n == 0 ; 2^0 root does not exist
         // if n is more than 5 no root exist
-        assert!(
-            k == 0 || k <= 5,
-            "2^{:?} th root does not exist",
-            k
-        );
+        assert!(k == 0 || k <= 5, "2^{:?} th root does not exist", k);
         if k == 5 {
             println!("{:?}", BandScalar(TWO_ADIC_ROOT))
         };
-        //TWO_ADIC_ROOT: & 'static str = "005282DB87529CFA3F0464519C8B0FA5AD187148E11A61616070024F42F8EF94"; 
-        BandScalar(TWO_ADIC_ROOT).power_by((U256::ONE<<((5-k) as usize)).to_words())
-        
+        //TWO_ADIC_ROOT: & 'static str = "005282DB87529CFA3F0464519C8B0FA5AD187148E11A61616070024F42F8EF94";
+        BandScalar(TWO_ADIC_ROOT).power_by((U256::ONE << ((5 - k) as usize)).to_words())
     }
-
 }
 
 // ======== From implementation ==========
@@ -331,30 +328,27 @@ impl From<u128> for BandScalar {
         Self(U256::from_u128(value))
     }
 }
-impl From<[u64; 6]> for BandScalar{
+impl From<[u64; 6]> for BandScalar {
     fn from(value: [u64; 6]) -> Self {
-        let value = U256::from_words([value[0],value[1],value[2],value[3]]);
+        let value = U256::from_words([value[0], value[1], value[2], value[3]]);
         Self::new(value)
     }
 }
 
-
-impl From<U256> for BandScalar{
+impl From<U256> for BandScalar {
     fn from(value: U256) -> Self {
         let value = U256::from_words(value.into());
         Self::new(value)
     }
 }
 
-
-
 //=========bound implementation========
-impl AsRef<[u8]> for BandScalar{
+impl AsRef<[u8]> for BandScalar {
     fn as_ref(&self) -> &[u8] {
         self.as_ref()
     }
 }
-impl AsMut<u8> for BandScalar{
+impl AsMut<u8> for BandScalar {
     fn as_mut(&mut self) -> &mut u8 {
         self.as_mut()
     }

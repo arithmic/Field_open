@@ -2,20 +2,20 @@ use core::{
     AsBytes, ByteReader, ByteWriter, Deserializable, DeserializationError, Randomizable,
     Serializable,
 };
+use crypto_bigint::{
+    generic_array::GenericArray,
+    subtle::{Choice, ConditionallySelectable, ConstantTimeEq, ConstantTimeLess, CtOption},
+    ArrayEncoding, Encoding, Integer, Limb, Random, Zero, U256,
+};
+use rand::rngs::OsRng;
 use std::{
     fmt::{Display, Formatter},
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
     slice,
 };
-use crypto_bigint::{
-    generic_array::GenericArray,
-    subtle::{Choice, ConditionallySelectable, ConstantTimeLess, CtOption, ConstantTimeEq},
-    ArrayEncoding, Encoding, Integer, Limb, Random, Zero, U256,
-};
-use rand::rngs::OsRng;
 use traits::traits::{Field, PrimeField};
 
-use crate::scalar::{sbb, adc, mac};
+use crate::scalar::{adc, mac, sbb};
 
 // Size of field elements of this elliptic curve.
 pub type FieldSize = <U256 as crypto_bigint::ArrayEncoding>::ByteSize;
@@ -35,7 +35,8 @@ pub const FRAC_JUB_SCALAR_MODULUS_2: JubScalar = JubScalar(JUB_SCALAR_MODULUS.sh
 
 pub const GENERATOR: u32 = 3;
 
-pub const TWO_ADIC_ROOT: U256 = U256::from_be_hex("0e7db4ea6533afa906673b0101343b00a6682093ccc81082d0970e5ed6f72cb6");
+pub const TWO_ADIC_ROOT: U256 =
+    U256::from_be_hex("0e7db4ea6533afa906673b0101343b00a6682093ccc81082d0970e5ed6f72cb6");
 
 //mu = floor({2^512}/p)= 2045593080716281616348203381729468609728209645786990242449482205581148743408809
 //                  = 11_AA84_A76F_F6F1_BBE1_C5AE_E5B8_3F04_76A0_1B7C_7219_2B99_F029_7756_5EE9_B246_1CA9
@@ -120,7 +121,7 @@ impl Field for JubScalar {
     const ONE: Self = Self::ONE;
 
     // returns the random JubScalar field element
-    fn random()->Self {
+    fn random() -> Self {
         //return random JubScalar element
         let mut kk = JubScalar(U256::random(&mut OsRng));
         while kk >= JubScalar(JUB_SCALAR_MODULUS) {
@@ -129,8 +130,8 @@ impl Field for JubScalar {
         kk
     }
 
-    fn sqrt(self)->CtOption<Self> {
-       // Tonelli-Shank's algorithm for q mod 4 = 3
+    fn sqrt(self) -> CtOption<Self> {
+        // Tonelli-Shank's algorithm for q mod 4 = 3
         // See https://eprint.iacr.org/2012/685.pdf
         // M+1/4= 1638621099222693452482741890880811432426480316468079320341339790598045813550
         // Compute s^((M+1)/4)
@@ -144,25 +145,64 @@ impl Field for JubScalar {
         CtOption::new(s, (s.square()).ct_eq(&self))
     }
     // Exponentiates the self by pow
-    fn power_by<S:AsRef<[u64]>>(self,pow:S)->Self {
-        let mut res = Self::ONE;
-        for e in pow.as_ref().iter().rev() {
-            for i in (0..64).rev() {
-                res = res.square();
-
-                if ((*e >> i) & 1) == 1 {
-                    res = res * self;
+    fn power_by<S: AsRef<[u64]>>(self, pow: S) -> Self {
+        let mut exp = [0, 0, 0, 0];
+        for (iter, value) in pow.as_ref().iter().enumerate() {
+            exp[iter] = *value
+        }
+        let mut r = self;
+        let mut a = Self::ONE;
+        if exp[1] == 0 && exp[2] == 0 && exp[3] == 0 {
+            let e = exp[0];
+            if e < (1_u64 << 32) {
+                for i in 0..32 {
+                    if ((e >> i) & 1) == 1 {
+                        a = a * r;
+                    }
+                    r = r.square();
+                }
+            } else {
+                for i in 0..64 {
+                    if ((e >> i) & 1) == 1 {
+                        a = a * r;
+                    }
+                    r = r.square();
+                }
+            }
+        } else if exp[2] == 0 && exp[3] == 0 {
+            for e in [exp[0], exp[1]] {
+                for i in 0..64 {
+                    if ((e >> i) & 1) == 1 {
+                        a = a * r;
+                    }
+                    r = r.square();
+                }
+            }
+        } else if exp[3] == 0 {
+            for e in [exp[0], exp[1], exp[2]] {
+                for i in 0..64 {
+                    if ((e >> i) & 1) == 1 {
+                        a = a * r;
+                    }
+                    r = r.square();
+                }
+            }
+        } else {
+            for e in exp.iter().rev() {
+                for i in (0..64).rev() {
+                    a = a.square();
+                    if ((*e >> i) & 1) == 1 {
+                        a.mul_assign(self)
+                    }
                 }
             }
         }
-
-        res
+        a
     }
+    type BaseField = JubScalar;
 
-    type BaseField=JubScalar;
-
-    fn cube(self)->Self{
-        self*self*self
+    fn cube(self) -> Self {
+        self * self * self
     }
     fn to_curve_bytes(&self) -> &[u8] {
         self.as_bytes()
@@ -172,71 +212,65 @@ impl Field for JubScalar {
         self.0.to_words().into()
     }
 
-    fn from_words( a: &Vec<u64>) -> Self {
-        let k = [a[0],a[1],a[2],a[3]];
+    fn from_words(a: &Vec<u64>) -> Self {
+        let k = [a[0], a[1], a[2], a[3]];
         let value = U256::from_words(k);
         JubScalar(value)
     }
 
+    const ELEMENT_BYTES: usize = ELEMENT_BYTES;
 
-    const ELEMENT_BYTES: usize  = ELEMENT_BYTES;
-
-    fn  from_uint_reduced(w: Self) -> Self {
+    fn from_uint_reduced(w: Self) -> Self {
         let (r, underflow) = w.0.sbb(&JUB_SCALAR_MODULUS, Limb::ZERO);
         let underflow = Choice::from((underflow.0 >> (Limb::BITS - 1)) as u8);
         Self(U256::conditional_select(&w.0, &r, !underflow))
     }
 
-    fn get_windows(&self, window_bits : usize)->Vec<usize> {
-
+    fn get_windows(&self, window_bits: usize) -> Vec<usize> {
         let int = &self.0;
 
-        let window_marker = 1usize<<window_bits;
+        let window_marker = 1usize << window_bits;
 
-        let n_windows = (256/window_bits) + 1;
+        let n_windows = (256 / window_bits) + 1;
 
-        let mut windows = vec![0usize;n_windows];
+        let mut windows = vec![0usize; n_windows];
 
-        for i in 0..(n_windows){
-            windows[i] = ((int>>(i*window_bits)).to_words()[0] as usize)%(window_marker);
+        for i in 0..(n_windows) {
+            windows[i] = ((int >> (i * window_bits)).to_words()[0] as usize) % (window_marker);
         }
         windows
-    
     }
 
     const IS_CANONICAL: bool = true;
-
-
-
 }
 
-impl PrimeField for JubScalar{
-    type Repr=FieldBytes;
+impl PrimeField for JubScalar {
+    type Repr = FieldBytes;
 
-    fn is_odd(self)->Choice {
+    fn is_odd(self) -> Choice {
         self.0.is_odd()
     }
 
-    fn get_root_of_unity(k:u32)->Self {
-        assert!(k==1, "2^{k}th root does not exist");
+    fn get_root_of_unity(k: u32) -> Self {
+        assert!(k == 1, "2^{k}th root does not exist");
         JubScalar(TWO_ADIC_ROOT)
     }
 
-    const MODULUS:&'static str="0e7db4ea6533afa906673b0101343b00a6682093ccc81082d0970e5ed6f72cb7";
+    const MODULUS: &'static str =
+        "0e7db4ea6533afa906673b0101343b00a6682093ccc81082d0970e5ed6f72cb7";
 
-    const NUM_BITS:u32=(ELEMENT_BYTES*8) as u32;
+    const NUM_BITS: u32 = (ELEMENT_BYTES * 8) as u32;
 
-    const GENERATOR:Self= JubScalar(U256::from_u32(3));
+    const GENERATOR: Self = JubScalar(U256::from_u32(3));
 
-    const TWO_ADDICITY: u32= 1;
+    const TWO_ADDICITY: u32 = 1;
 
-    fn is_even(self)->Choice{
+    fn is_even(self) -> Choice {
         !self.is_odd()
     }
 
-    const TWO_ADIC_ROOT: & 'static str = "0e7db4ea6533afa906673b0101343b00a6682093ccc81082d0970e5ed6f72cb6";
-
-
+    const TWO_ADIC_ROOT: &'static str =
+        "0e7db4ea6533afa906673b0101343b00a6682093ccc81082d0970e5ed6f72cb6";
 }
 
 impl Display for JubScalar {
@@ -324,7 +358,7 @@ impl From<u8> for JubScalar {
 }
 impl From<[u64; 6]> for JubScalar {
     fn from(value: [u64; 6]) -> Self {
-        let value = U256::from_words([value[0],value[1],value[2],value[3]]);
+        let value = U256::from_words([value[0], value[1], value[2], value[3]]);
         Self::new(value)
     }
 }
@@ -466,7 +500,7 @@ impl Reduce<U256> for JubScalar {
         Self(U256::conditional_select(&w, &r, !underflow))
     }
 }
-impl ConditionallySelectable for JubScalar{
+impl ConditionallySelectable for JubScalar {
     fn conditional_select(a: &Self, b: &Self, choice: Choice) -> Self {
         Self(U256::conditional_select(&a.0, &b.0, choice))
     }

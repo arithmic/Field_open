@@ -174,18 +174,58 @@ impl Field for Scalar {
     }
     // Exponentiates the self by pow
     fn power_by<S: AsRef<[u64]>>(self, pow: S) -> Self {
-        let mut res = Self::ONE;
-        for e in pow.as_ref().iter().rev() {
-            for i in (0..64).rev() {
-                res = res.square();
-
-                if ((*e >> i) & 1) == 1 {
-                    res = res * self;
+        let mut exp = [0, 0, 0, 0];
+        for (iter, value) in pow.as_ref().iter().enumerate() {
+            exp[iter] = *value
+        }
+        let mut r = self;
+        let mut a = Self::ONE;
+        if exp[1] == 0 && exp[2] == 0 && exp[3] == 0 {
+            let e = exp[0];
+            if e < (1_u64 << 32) {
+                for i in 0..32 {
+                    if ((e >> i) & 1) == 1 {
+                        a = a * r;
+                    }
+                    r = r.square();
+                }
+            } else {
+                for i in 0..64 {
+                    if ((e >> i) & 1) == 1 {
+                        a = a * r;
+                    }
+                    r = r.square();
+                }
+            }
+        } else if exp[2] == 0 && exp[3] == 0 {
+            for e in [exp[0], exp[1]] {
+                for i in 0..64 {
+                    if ((e >> i) & 1) == 1 {
+                        a = a * r;
+                    }
+                    r = r.square();
+                }
+            }
+        } else if exp[3] == 0 {
+            for e in [exp[0], exp[1], exp[2]] {
+                for i in 0..64 {
+                    if ((e >> i) & 1) == 1 {
+                        a = a * r;
+                    }
+                    r = r.square();
+                }
+            }
+        } else {
+            for e in exp.iter().rev() {
+                for i in (0..64).rev() {
+                    a = a.square();
+                    if ((*e >> i) & 1) == 1 {
+                        a.mul_assign(self)
+                    }
                 }
             }
         }
-
-        res
+        a
     }
     type BaseField = Scalar;
 
