@@ -628,6 +628,16 @@ fn neg(a: &Fp) -> Fp {
 }
 //returns a*b mod p
 fn mul(a: &Fp, b: &Fp) -> Fp {
+    if a == &Fp::ONE || b == &Fp::ONE {
+        if a == &Fp::ONE {
+            return b.clone();
+        } else {
+            return a.clone();
+        }
+    }
+    if a == &Fp::ZERO || b == &Fp::ZERO {
+        return Fp::ZERO;
+    }
     let product = a.0.mul_wide(&b.0);
     let limbs: Uint<6> = reduction::montgomery_reduction(product, MODULUS, P_INV);
     let words: [u64; 6] = limbs.to_words();

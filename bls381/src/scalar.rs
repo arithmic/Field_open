@@ -488,7 +488,17 @@ pub const fn neg(a: &Scalar) -> Scalar {
     Scalar(a.0.neg_mod(&SCALAR_MODULUS))
 }
 //Returns a * b mod n
-pub const fn mul(a: &Scalar, b: &Scalar) -> Scalar {
+pub fn mul(a: &Scalar, b: &Scalar) -> Scalar {
+    if a == &Scalar::ONE || b == &Scalar::ONE {
+        if a == &Scalar::ONE {
+            return b.clone();
+        } else {
+            return a.clone();
+        }
+    }
+    if a == &Scalar::ZERO || b == &Scalar::ZERO {
+        return Scalar::ZERO;
+    }
     let product = a.0.mul_wide(&b.0);
     let limbs = barrett_reduce(product.0, product.1);
     let words: [u64; 4] = limbs.to_words();
