@@ -1,2 +1,13 @@
 [workspace]
-members = ["f128", "utils/core", "utils/rand", "traits", "stark252", "bls381", "cheetah64","bn254","hash"]
+members = [
+    "f128",
+    "utils/core",
+    "utils/rand",
+    "traits",
+    "stark252",
+    "bls381",
+    "cheetah64",
+    "bn254",
+    "hash",
+    "table",
+]

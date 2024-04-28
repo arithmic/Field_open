@@ -1,0 +1,9 @@
+[package]
+name = "table"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+traits = {version ="0.1.0" ,path = "../traits" }
+serde = { version = "1.0.192", features = ["derive"] }
+nalgebra = "0.32.3"
